@@ -8,74 +8,118 @@ const publicRoutes = ['/sign-in', '/sign-up'];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
   const cookieStore = await cookies();
+
   const accessToken = cookieStore.get('accessToken')?.value;
   const refreshToken = cookieStore.get('refreshToken')?.value;
 
-  const isPublicRoute = publicRoutes.some((route) =>
-    pathname.startsWith(route)
-  );
-  const isPrivateRoute = privateRoutes.some((route) =>
-    pathname.startsWith(route)
+  const isPublicRoute = publicRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  if (!accessToken) {
-    if (refreshToken) {
-      // Якщо accessToken відсутній, але є refreshToken — потрібно перевірити сесію навіть для публічного маршруту,
-      // адже сесія може залишатися активною, і тоді потрібно заборонити доступ до публічного маршруту.
+  const isPrivateRoute = privateRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
+  if (!isPublicRoute && !isPrivateRoute) {
+    return NextResponse.next();
+  }
+
+  // Якщо accessToken існує
+  if (accessToken) {
+    if (isPublicRoute) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+
+    return NextResponse.next();
+  }
+
+  // Якщо accessToken відсутній, але є refreshToken
+  if (refreshToken) {
+    try {
       const data = await checkServerSession();
       const setCookie = data.headers['set-cookie'];
 
       if (setCookie) {
         const cookieArray = Array.isArray(setCookie) ? setCookie : [setCookie];
-        for (const cookieStr of cookieArray) {
-          const parsed = parseSetCookie(cookieStr);
 
-          if (parsed.value) {
-            cookieStore.set(parsed.name, parsed.value, parsed);
+        const parsedCookies = cookieArray
+          .map((cookieStr) => parseSetCookie(cookieStr))
+          .filter((cookie) => cookie.value !== undefined);
+
+        const hasAccessToken = parsedCookies.some(
+          (cookie) =>
+            cookie.name === 'accessToken' &&
+            cookie.value !== undefined &&
+            cookie.value !== ''
+        );
+
+        if (hasAccessToken) {
+          // Оновлюємо cookies поточного запиту
+          for (const parsed of parsedCookies) {
+            if (parsed.value === undefined) continue;
+
+            cookieStore.set(parsed.name, parsed.value, {
+              path: parsed.path ?? '/',
+              domain: parsed.domain,
+              httpOnly: parsed.httpOnly,
+              secure: parsed.secure,
+              sameSite: parsed.sameSite,
+              expires: parsed.expires,
+              maxAge: parsed.maxAge,
+            });
           }
-        }
 
-        // Якщо сесія все ще активна:
-        // для публічного маршруту — виконуємо редірект на головну.
-        if (isPublicRoute) {
-          return NextResponse.redirect(new URL('/', request.url), {
-            headers: {
-              Cookie: cookieStore.toString(),
-            },
-          });
-        }
-        // для приватного маршруту — дозволяємо доступ
-        if (isPrivateRoute) {
-          return NextResponse.next({
-            headers: {
-              Cookie: cookieStore.toString(),
-            },
-          });
+          let response: NextResponse;
+
+          // Авторизований користувач на публічному маршруті
+          if (isPublicRoute) {
+            response = NextResponse.redirect(new URL('/', request.url));
+          } else {
+            // Передаємо оновлені cookies серверним компонентам
+            const requestHeaders = new Headers(request.headers);
+
+            requestHeaders.set('Cookie', cookieStore.toString());
+
+            response = NextResponse.next({
+              request: {
+                headers: requestHeaders,
+              },
+            });
+          }
+
+          // Передаємо оновлені cookies браузеру
+          for (const parsed of parsedCookies) {
+            if (parsed.value === undefined) continue;
+
+            response.cookies.set(parsed.name, parsed.value, {
+              path: parsed.path ?? '/',
+              domain: parsed.domain,
+              httpOnly: parsed.httpOnly,
+              secure: parsed.secure,
+              sameSite: parsed.sameSite,
+              expires: parsed.expires,
+              maxAge: parsed.maxAge,
+            });
+          }
+
+          return response;
         }
       }
-    }
-    // Якщо refreshToken або сесії немає:
-    // публічний маршрут — дозволяємо доступ
-    if (isPublicRoute) {
-      return NextResponse.next();
-    }
-
-    // приватний маршрут — редірект на сторінку входу
-    if (isPrivateRoute) {
-      return NextResponse.redirect(new URL('/sign-in', request.url));
+    } catch (error) {
+      console.error('Session refresh failed:', error);
     }
   }
 
-  // Якщо accessToken існує:
-  // публічний маршрут — виконуємо редірект на головну
-  if (isPublicRoute) {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
-  // приватний маршрут — дозволяємо доступ
+  // Якщо токенів немає або оновлення сесії не вдалося
   if (isPrivateRoute) {
-    return NextResponse.next();
+    return NextResponse.redirect(new URL('/sign-in', request.url));
   }
+
+  // Неавторизованим користувачам дозволено
+  // відкривати сторінки входу та реєстрації
+  return NextResponse.next();
 }
 
 export const config = {
