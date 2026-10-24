@@ -4,6 +4,7 @@ import axios from 'axios';
 import { cookies } from 'next/headers';
 
 import type { User } from '@/types/user';
+import { Note } from '@/types/note';
 
 const baseURL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
@@ -39,5 +40,42 @@ export const getMe = async (): Promise<User> => {
   return response.data;
 };
 
-// fetchNotes
-// fetchNoteById
+export interface FetchNotesResponse {
+  notes: Note[];
+  totalPages: number;
+}
+
+export const fetchNotes = async (
+  searchText: string,
+  tag: string,
+  page: number,
+  perPage: number
+): Promise<FetchNotesResponse> => {
+  const cookieStore = await cookies();
+
+  const response = await nextServer.get<FetchNotesResponse>('/notes', {
+    headers: {
+      Cookie: cookieStore.toString(),
+    },
+    params: {
+      page,
+      perPage,
+      search: searchText || undefined,
+      tag: tag !== 'all' ? tag : undefined,
+    },
+  });
+
+  return response.data;
+};
+
+export const fetchNoteById = async (id: string): Promise<Note> => {
+  const cookieStore = await cookies();
+
+  const response = await nextServer.get<Note>(`/notes/${id}`, {
+    headers: {
+      Cookie: cookieStore.toString(),
+    },
+  });
+
+  return response.data;
+};
