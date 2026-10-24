@@ -4,7 +4,6 @@ import css from './NotesPage.module.css';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { fetchNotes } from '../../../../lib/api';
 import { toast } from 'sonner';
 import type { Note } from '@/types/note';
 import NoteList from '@/components/NoteList/NoteList';
@@ -13,6 +12,7 @@ import SearchBox from '@/components/SearchBox/SearchBox';
 import { useDebouncedCallback } from 'use-debounce';
 import Loader from '@/components/Loader/Loader';
 import ErrorMessage from '@/components/ErrorMessage/ErrorMessage';
+import { fetchNotes } from '@/lib/api/clientApi';
 
 interface NotesClientProps {
   tag: string;
