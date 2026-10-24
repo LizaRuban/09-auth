@@ -16,7 +16,20 @@ const nextServer = axios.create({
   baseURL: `${baseURL}/api`,
 });
 
-export const checkSession = async (cookieHeader?: string): Promise<boolean> => {
+export const checkServerSession = async () => {
+  // Дістаємо поточні cookie
+  const cookieStore = await cookies();
+  const res = await nextServer.get('/auth/session', {
+    headers: {
+      // передаємо кукі далі
+      Cookie: cookieStore.toString(),
+    },
+  });
+  // Повертаємо повний респонс, щоб proxy мав доступ до нових cookie
+  return res;
+};
+
+export const checkSession = async (cookieHeader?: string) => {
   const cookieStore = cookieHeader ?? (await cookies()).toString();
 
   const response = await nextServer.get<{ success: boolean }>('/auth/session', {
@@ -25,7 +38,7 @@ export const checkSession = async (cookieHeader?: string): Promise<boolean> => {
     },
   });
 
-  return response.data.success === true;
+  return response;
 };
 
 export const getMe = async (): Promise<User> => {
